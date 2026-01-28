@@ -10,8 +10,10 @@ from .tracker import RagasTracker
 logger = setup_logger("Agent")
 
 class Agent:
-    def __init__(self):
-        logger.info(f"Initializing Agent with LLM: {config.LLM_MODEL}")
+    def __init__(self, system_prompt: str = None, model_name: str = None, embedding_model: str = None):
+        self.model_name = model_name if model_name else config.LLM_MODEL
+        self.embedding_model = embedding_model if embedding_model else config.EMBEDDING_MODEL
+        logger.info(f"Initializing Agent with LLM: {self.model_name}, Embedding: {self.embedding_model}")
         
         # Check if LangFuse is configured
         if config.LANGFUSE_PUBLIC_KEY and config.LANGFUSE_SECRET_KEY:
@@ -27,10 +29,10 @@ class Agent:
                 api_key="ollama"
             )
             
-        self.tools = ToolSet()
+        self.tools = ToolSet(embedding_model=self.embedding_model)
         self.tracker = RagasTracker()
         
-        self.system_prompt = """You are DevMind, an expert AI assistant strictly focused on software development and technical tasks.
+        default_prompt = """You are DevMind, an expert AI assistant strictly focused on software development and technical tasks.
         
         Your capabilities include:
         - Writing, debugging, and explaining code.
@@ -39,11 +41,24 @@ class Agent:
         - Researching latest technologies and tools.
 
         RULES:
-        1. If a user asks about topics unrelated to software engineering, programming, or technology (e.g., politics, entertainment, cooking, general life advice), politely decline and state that you can only assist with technical tasks.
-        2. ALWAYS verify facts using your available tools (retrieve_knowledge, web_search) before answering complex technical questions.
-        3. When asked to write code or guides, create high-quality markdown artifacts using the `save_solution` tool.
-        4. Be concise, professional, and technically accurate.
+        1. LANGUAGE:
+           - If the user speaks Russian, YOU MUST REPLY IN RUSSIAN.
+           - If the user speaks English, reply in English.
+           - Maintain the user's language throughout the conversation.
+        2. If a user asks about topics unrelated to software engineering, programming, or technology (e.g., politics, entertainment, cooking, general life advice), politely decline and state that you can only assist with technical tasks.
+        3. PLANNING & REFLECTION (ReAct):
+           - For complex tasks, use `create_plan` FIRST to outline your steps.
+           - After each step, REFLECT: "Did I get what I needed? Do I need to change my plan?"
+           - If a step fails, propose a fix or an alternative approach in your thought process.
+           - If you are stuck or cannot find information, ask the user clarifying questions.
+        4. TOOL USAGE:
+           - Use `retrieve_knowledge` and `web_search` strategically to gather information needed for your plan.
+           - Prefer local knowledge when appropriate, but you are free to choose the best tool for the current step.
+        5. When asked to write code or guides, create high-quality markdown artifacts using the `save_solution` tool.
+        6. Be concise, professional, and technically accurate.
         """
+        
+        self.system_prompt = system_prompt if system_prompt else default_prompt
         
         self.history = [{"role": "system", "content": self.system_prompt}]
         self.current_contexts = []
@@ -62,7 +77,7 @@ class Agent:
                 # Synchronous call in async context (Ollama is fast enough locally)
                 # Ideally, we should use AsyncOpenAI, but for now we keep it simple
                 response = self.client.chat.completions.create(
-                    model=config.LLM_MODEL,
+                    model=self.model_name,
                     messages=self.history,
                     tools=TOOLS_SCHEMA,
                     tool_choice="auto",

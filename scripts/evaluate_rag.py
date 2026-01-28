@@ -3,13 +3,10 @@ import sys
 import pandas as pd
 from datasets import Dataset
 from ragas import evaluate
-from ragas.metrics import (
-    context_precision,
-    faithfulness,
-    answer_relevance,
-)
-from langchain_community.chat_models import ChatOllama
-from langchain_community.embeddings import OllamaEmbeddings
+from ragas.metrics._context_precision import ContextPrecision
+from ragas.metrics._faithfulness import Faithfulness
+from ragas.metrics._answer_relevance import AnswerRelevancy
+from langchain_ollama import ChatOllama, OllamaEmbeddings
 
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -50,9 +47,9 @@ def run_evaluation():
         results = evaluate(
             dataset=dataset,
             metrics=[
-                context_precision,
-                faithfulness,
-                answer_relevance,
+                ContextPrecision(),
+                Faithfulness(),
+                AnswerRelevancy(),
             ],
             llm=eval_llm,
             embeddings=eval_embeddings

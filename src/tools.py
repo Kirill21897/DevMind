@@ -8,7 +8,9 @@ from src.utils import setup_logger, get_ollama_embedding
 logger = setup_logger("Tools")
 
 class ToolSet:
-    def __init__(self):
+    def __init__(self, embedding_model: str = None):
+        self.embedding_model = embedding_model if embedding_model else config.EMBEDDING_MODEL
+        
         # 1. ChromaDB Client
         try:
             self.chroma_client = chromadb.PersistentClient(path=config.CHROMA_DB_PATH)
@@ -37,7 +39,7 @@ class ToolSet:
             return "Error: Database not initialized."
 
         # 1. Embed Query
-        query_vector = get_ollama_embedding(query)
+        query_vector = get_ollama_embedding(query, model=self.embedding_model)
         if not query_vector:
             return "Error: Could not generate embedding for query."
 
@@ -100,31 +102,42 @@ class ToolSet:
 
     def save_solution(self, filename: str, content: str) -> str:
         """
-        Save content to a file.
+        Save the generated solution (code or guide) to a file.
         """
+        file_path = os.path.join(config.OUTPUT_DIR, filename)
         try:
-            safe_filename = os.path.basename(filename)
-            file_path = os.path.join(config.OUTPUT_DIR, safe_filename)
-            
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
-                
-            logger.info(f"File saved: {file_path}")
-            return f"File saved successfully: {file_path}"
+            return f"Successfully saved to {file_path}"
         except Exception as e:
-            logger.error(f"File save error: {e}")
             return f"Error saving file: {e}"
 
+    def create_plan(self, steps: list) -> str:
+        """
+        Create and save a step-by-step plan for the task.
+        Use this tool to structure complex tasks before execution.
+        """
+        plan_content = "## Execution Plan\n\n"
+        for i, step in enumerate(steps, 1):
+            plan_content += f"{i}. {step}\n"
+            
+        logger.info(f"Plan Created: {steps}")
+        return f"Plan created successfully with {len(steps)} steps:\n{plan_content}"
+
+# Define Tools Schema for OpenAI/Ollama
 TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
             "name": "retrieve_knowledge",
-            "description": "Search local knowledge base for technical details, documentation, and project specifics.",
+            "description": "Search the local knowledge base for technical documentation and internal guidelines. ALWAYS use this first.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "The search query."}
+                    "query": {
+                        "type": "string",
+                        "description": "The search query."
+                    }
                 },
                 "required": ["query"]
             }
@@ -134,11 +147,14 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the internet for up-to-date information, libraries, or errors.",
+            "description": "Search the internet for public information, library docs, or latest tech news. Use ONLY if local knowledge is insufficient.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "The search query."}
+                    "query": {
+                        "type": "string",
+                        "description": "The search query."
+                    }
                 },
                 "required": ["query"]
             }
@@ -148,14 +164,40 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "save_solution",
-            "description": "Save the final answer, code, or documentation to a file.",
+            "description": "Save a generated code file, script, or markdown guide to the output directory.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "filename": {"type": "string", "description": "Name of the file (e.g., solution.md)."},
-                    "content": {"type": "string", "description": "The content to write to the file."}
+                    "filename": {
+                        "type": "string",
+                        "description": "Name of the file (e.g., 'script.py', 'guide.md')."
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The text content to write to the file."
+                    }
                 },
                 "required": ["filename", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_plan",
+            "description": "Create a structured plan of action. REQUIRED for complex or multi-step tasks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "List of sequential steps to execute."
+                    }
+                },
+                "required": ["steps"]
             }
         }
     }
